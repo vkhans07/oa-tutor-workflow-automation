@@ -17,4 +17,3 @@ class OATutorAgent:
         df = df.loc[:, df.columns != '']
         return df
 
-    

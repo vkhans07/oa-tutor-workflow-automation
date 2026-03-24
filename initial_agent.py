@@ -1,4 +1,5 @@
 import re
+import json
 import gspread
 from playwright.sync_api import sync_playwright, Locator
 import pandas as pd
@@ -20,42 +21,54 @@ PART_PREFIX = re.compile(r'^[ⓐⓑⓒⓓⓔⓕⓖⓗ]|\([a-h]\)\s*')
 @dataclass
 class Question:
     title: str
-    body_text: str = ''  
+    body_text: str = ''
     problems: list[str] = field(default_factory=list)
 
 def strip_part_prefix(text: str) -> str:
     return PART_PREFIX.sub('', text).strip()
 
-def extract_text_with_js(locator: Locator) -> str:
+def extract_text_with_latex(locator: Locator) -> str:
     """
-    Uses JavaScript to extract text. Bypasses Playwright's visual visibility checks
-    (which hide MathJax) and prevents duplicate math text by reading only the assistive MML.
+    Extracts text from the unrendered DOM fragment. 
+    MathJax is not present on this blank page, so the raw LaTeX delimiters are fully intact.
     """
-    return locator.evaluate("""el => {
-        function getText(node) {
-            let text = '';
-            node.childNodes.forEach(child => {
-                if (child.nodeType === Node.TEXT_NODE) {
-                    text += child.textContent;
-                } else if (child.nodeType === Node.ELEMENT_NODE) {
-                    // Skip title node so it doesn't bleed into body
-                    if (child.getAttribute('data-type') === 'title') return;
-                    
-                    // Handle MathJax: pull from assistive-mml to get clean text
-                    if (child.tagName && child.tagName.toLowerCase() === 'mjx-container') {
-                        const mml = child.querySelector('mjx-assistive-mml');
-                        // Pad with spaces so math doesn't fuse with surrounding words
-                        text += ' ' + (mml ? mml.textContent : child.textContent) + ' ';
-                        return; // Stop recursing into this math node
-                    }
-                    
-                    text += getText(child);
-                }
-            });
-            return text;
-        }
-        return getText(el).replace(/\s+/g, ' ').trim();
-    }""")
+    text = locator.inner_text().strip()
+    
+    text = re.sub(r'\\\(', '$', text)
+    text = re.sub(r'\\\)', '$', text)
+    text = re.sub(r'\\\[', '$$', text)
+    text = re.sub(r'\\\]', '$$', text)
+    
+    text = re.sub(r'\s+', ' ', text).strip()
+    return text
+
+def find_content_string(obj):
+    """
+    Recursively search the JSON payload to find the largest string containing raw LaTeX 
+    delimiters or example tags. This bypasses brittle schema checks entirely.
+    """
+    candidates = []
+    
+    def search(o, depth=0):
+        if depth > 100: return # Prevent infinite recursion on weird JSON
+        if isinstance(o, str):
+            # We only care about strings that contain raw LaTeX or OpenStax example tags
+            if '\\(' in o or '<example' in o or 'data-type="example"' in o:
+                candidates.append(o)
+        elif isinstance(o, dict):
+            for v in o.values():
+                search(v, depth + 1)
+        elif isinstance(o, list):
+            for item in o:
+                search(item, depth + 1)
+                
+    search(obj)
+    
+    if not candidates:
+        return ""
+        
+    # The longest string found will be the massive chapter payload
+    return max(candidates, key=len)
 
 def scrape_examples(url: str) -> list[Question]:
     with sync_playwright() as p:
@@ -63,24 +76,69 @@ def scrape_examples(url: str) -> list[Question]:
         page = browser.new_page()
         page.goto(url, wait_until="networkidle")
 
-        examples: list[Question] = []
+        raw_content_html = ""
         
-        # Target the problem container directly based on the DOM structure
-        problem_elements = page.locator("[data-type='problem']").all()
+        # 1. Try to get JSON from Next.js State
+        next_data_loc = page.locator("script#__NEXT_DATA__")
+        if next_data_loc.count() > 0:
+            try:
+                next_text = next_data_loc.inner_text().strip()
+                if next_text:
+                    next_data = json.loads(next_text)
+                    raw_content_html = find_content_string(next_data)
+            except Exception as e:
+                print("Failed to parse Next.js JSON:", e)
 
-        for problem_loc in problem_elements:
-            title_loc = problem_loc.locator("[data-type='title']").first
+        # 2. Try the OpenStax API JSON fallback if Next.js data fails
+        if not raw_content_html:
+            html_content = page.content()
+            api_url_match = re.search(r'(https?://[^"\'\s]+/apps/archive/[^"\'\s]+/contents/[^"\'\s]+\.json|/apps/archive/[^"\'\s]+/contents/[^"\'\s]+\.json)', html_content)
+            
+            if api_url_match:
+                api_url = api_url_match.group(1)
+                if api_url.startswith('/'):
+                    api_url = "https://openstax.org" + api_url
+                print(f"Fetching raw content via API: {api_url}")
+                try:
+                    api_response = page.request.get(api_url)
+                    api_data = api_response.json()
+                    raw_content_html = find_content_string(api_data)
+                except Exception as e:
+                    print("Failed to fetch from API URL:", e)
+
+        if not raw_content_html:
+            print("ERROR: Could not find any HTML containing raw LaTeX or examples in the JSON data.")
+            browser.close()
+            return []
+
+        parser_page = browser.new_page()
+        parser_page.set_content(raw_content_html)
+
+        examples: list[Question] = []
+        # Support both standard HTML and OpenStax CNXML tags
+        example_elements = parser_page.locator("[data-type='example'], example").all()
+
+        for item in example_elements:
+            title_loc = item.locator("[data-type='title'], title").first
             title = title_loc.inner_text().strip() if title_loc.count() > 0 else ""
 
-            circled_items = problem_loc.locator("ol.circled > li").all()
+            problem_loc = item.locator("[data-type='problem'], problem").first
+            if problem_loc.count() == 0:
+                continue
+
+            # Remove title node from problem DOM before extracting text
+            problem_loc.evaluate("el => { const t = el.querySelector('[data-type=title], title'); if (t) t.remove(); }")
+
+            # Detect multi-part questions (HTML or CNXML lists)
+            circled_items = problem_loc.locator("ol.circled > li, list > item").all()
 
             if len(circled_items) > 1:
-                body_text_loc = problem_loc.locator("p").first
-                body_text = extract_text_with_js(body_text_loc) if body_text_loc.count() > 0 else ""
-                problems = [strip_part_prefix(extract_text_with_js(part)) for part in circled_items]
+                body_text_loc = problem_loc.locator("p, para").first
+                body_text = extract_text_with_latex(body_text_loc) if body_text_loc.count() > 0 else ""
+                problems = [strip_part_prefix(extract_text_with_latex(part)) for part in circled_items]
             else:
                 body_text = ''
-                problems = [extract_text_with_js(problem_loc)]
+                problems = [extract_text_with_latex(problem_loc)]
 
             examples.append(Question(title=title, body_text=body_text, problems=problems))
 
@@ -118,7 +176,7 @@ def main():
     new_data = df_population(examples, problem_name_stem='trig')
     pd.set_option('display.max_colwidth', None)
     print(new_data.head(20))
-    new_data.to_excel("trig_examples.xlsx", index=False)
+    new_data.to_csv("trig_examples.csv", index=False)
 
 if __name__ == "__main__":
     main()

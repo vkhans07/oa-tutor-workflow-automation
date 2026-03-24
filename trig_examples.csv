@@ -1,60 +1,27 @@
 Problem Name,Row Type,Title,Body Text,Answer,answerType,HintID,Dependency,mcChoices,Images (space delimited),Parent,OER src,openstax KC,KC,Taxonomy,License
 trig1,problem,Finding the Exact Value Using the Formula for the Cosine of the Difference of Two Angles,,,,,,,,,,,,,
-trig1,step,"Finding the Exact Value Using the Formula for the Cosine of the Difference of Two Angles
-          Using the formula for the cosine of the difference of two angles, find the exact value of cos⁡(5⁢𝜋4−𝜋6).cos⁡(5⁢π4−π6).cos(5π4−π6).",,,,,,,,,,,,,
+trig1,step,"Using the formula for the cosine of the difference of two angles, find the exact value of cos ( 5 π 4 − π 6 ) . cos ( 5 π 4 − π 6 ) .",,,,,,,,,,,,,
 trig2,problem,Finding the Exact Value Using the Formula for the Sum of Two Angles for Cosine,,,,,,,,,,,,,
-trig2,step,"Finding the Exact Value Using the Formula for the Sum of Two Angles for Cosine
-          Find the exact value of cos⁡(75∘).cos⁡(75∘).cos(75∘).",,,,,,,,,,,,,
-trig3,problem,Using Sum and Difference Identities to Evaluate the Difference of Angles,,,,,,,,,,,,,
-trig3,step,"Using Sum and Difference Identities to Evaluate the Difference of Angles
-          Use the sum and difference identities to evaluate the difference of the angles and show that part a equals part b.
-         
-           ⓐ sin⁡(45∘−30∘)sin⁡(45∘−30∘)sin(45∘−30∘)
-           
-           ⓑ sin⁡(135∘−120∘)sin⁡(135∘−120∘)sin(135∘−120∘)",,,,,,,,,,,,,
+trig2,step,Find the exact value of cos ( 75 ∘ ) . cos ( 75 ∘ ) .,,,,,,,,,,,,,
+trig3,problem,Using Sum and Difference Identities to Evaluate the Difference of Angles,Use the sum and difference identities to evaluate the difference of the angles and show that part a equals part b.,,,,,,,,,,,,
+trig3,step,sin ( 45 ∘ − 30 ∘ ) sin ( 45 ∘ − 30 ∘ ),,,,,,,,,,,,,
+trig3,step,sin ( 135 ∘ − 120 ∘ ) sin ( 135 ∘ − 120 ∘ ),,,,,,,,,,,,,
 trig4,problem,Finding the Exact Value of an Expression Involving an Inverse Trigonometric Function,,,,,,,,,,,,,
-trig4,step,"Finding the Exact Value of an Expression Involving an Inverse Trigonometric Function
-          Find the exact value of sin⁡(cos−112+sin−135).sin⁡(cos−112+sin−135).sin(cos−112+sin−135).",,,,,,,,,,,,,
+trig4,step,Find the exact value of sin ( cos −1 1 2 + sin −1 3 5 ) . sin ( cos −1 1 2 + sin −1 3 5 ) .,,,,,,,,,,,,,
 trig5,problem,Finding the Exact Value of an Expression Involving Tangent,,,,,,,,,,,,,
-trig5,step,"Finding the Exact Value of an Expression Involving Tangent
-          Find the exact value of tan⁡(𝜋6+𝜋4).tan⁡(π6+π4).tan(π6+π4).",,,,,,,,,,,,,
-trig6,problem,Finding Multiple Sums and Differences of Angles,,,,,,,,,,,,,
-trig6,step,"Finding Multiple Sums and Differences of Angles
-          Given sin⁡𝛼=35,0<𝛼<𝜋2,cos⁡𝛽=−513,𝜋<𝛽<3⁢𝜋2,sin⁡α=35,0<α<π2,cos⁡β=−513,π<β<3⁢π2,sinα=35,0<α<π2,cosβ=−513,π<β<3π2, find
-            ⓐ sin⁡(𝛼+𝛽)sin⁡(α+β)sin(α+β)
-            
-            ⓑ cos⁡(𝛼+𝛽)cos⁡(α+β)cos(α+β)
-            
-            ⓒ tan⁡(𝛼+𝛽)tan⁡(α+β)tan(α+β)
-            
-            ⓓ tan⁡(𝛼−𝛽)tan⁡(α−β)tan(α−β)",,,,,,,,,,,,,
+trig5,step,Find the exact value of tan ( π 6 + π 4 ) . tan ( π 6 + π 4 ) .,,,,,,,,,,,,,
+trig6,problem,Finding Multiple Sums and Differences of Angles,"Given sin α = 3 5 , 0 < α < π 2 , cos β = − 5 13 , π < β < 3 π 2 , sin α = 3 5 , 0 < α < π 2 , cos β = − 5 13 , π < β < 3 π 2 , find",,,,,,,,,,,,
+trig6,step,sin ( α + β ) sin ( α + β ),,,,,,,,,,,,,
+trig6,step,cos ( α + β ) cos ( α + β ),,,,,,,,,,,,,
+trig6,step,tan ( α + β ) tan ( α + β ),,,,,,,,,,,,,
+trig6,step,tan ( α − β ) tan ( α − β ),,,,,,,,,,,,,
 trig7,problem,Finding a Cofunction with the Same Value as the Given Expression,,,,,,,,,,,,,
-trig7,step,"Finding a Cofunction with the Same Value as the Given Expression
-          Write tan𝜋9tanπ9tanπ9 in terms of its cofunction.",,,,,,,,,,,,,
+trig7,step,Write tan π 9 tan π 9 in terms of its cofunction.,,,,,,,,,,,,,
 trig8,problem,Verifying an Identity Involving Sine,,,,,,,,,,,,,
-trig8,step,"Verifying an Identity Involving Sine
-          Verify the identity sin⁡(𝛼+𝛽)+sin⁡(𝛼−𝛽)=2sin⁡𝛼⁢cos⁡𝛽.sin⁡(α+β)+sin⁡(α−β)=2sin⁡α⁢cos⁡β.sin(α+β)+sin(α−β)=2sinαcosβ.",,,,,,,,,,,,,
+trig8,step,Verify the identity sin ( α + β ) + sin ( α − β ) = 2 sin α cos β . sin ( α + β ) + sin ( α − β ) = 2 sin α cos β .,,,,,,,,,,,,,
 trig9,problem,Verifying an Identity Involving Tangent,,,,,,,,,,,,,
-trig9,step,"Verifying an Identity Involving Tangent
-          Verify the following identity.
-           sin⁡(𝛼−𝛽)cos⁡𝛼⁢cos⁡𝛽=tan⁡𝛼−tan⁡𝛽sin⁡(α−β)cos⁡α⁢cos⁡β=tan⁡α−tan⁡βsin(α−β)cosαcosβ=tanα−tanβ",,,,,,,,,,,,,
+trig9,step,Verify the following identity. sin ( α − β ) cos α cos β = tan α − tan β sin ( α − β ) cos α cos β = tan α − tan β,,,,,,,,,,,,,
 trig10,problem,Using Sum and Difference Formulas to Solve an Application Problem,,,,,,,,,,,,,
-trig10,step,"Using Sum and Difference Formulas to Solve an Application Problem
-          Let 𝐿1L1L1 and 𝐿2L2L2 denote two non-vertical intersecting lines, and let 𝜃θθ denote the acute angle between 𝐿1L1L1 and 𝐿2.L2.L2. See Figure 7. Show that
-           tan⁡𝜃=𝑚2−𝑚11+𝑚1⁢𝑚2tan⁡θ=m2−m11+m1⁢m2tanθ=m2−m11+m1m2
-          where 𝑚1m1m1 and 𝑚2m2m2 are the slopes of 𝐿1L1L1 and 𝐿2L2L2 respectively. (Hint: Use the fact that tan⁡𝜃1=𝑚1tan⁡θ1=m1tanθ1=m1 and tan⁡𝜃2=𝑚2.tan⁡θ2=m2.tanθ2=m2. )
-              
-            
-          
-  Figure 
-7",,,,,,,,,,,,,
+trig10,step,"Let L 1 L 1 and L 2 L 2 denote two non-vertical intersecting lines, and let θ θ denote the acute angle between L 1 L 1 and L 2 . L 2 . See Figure 7 . Show that tan θ = m 2 − m 1 1 + m 1 m 2 tan θ = m 2 − m 1 1 + m 1 m 2 where m 1 m 1 and m 2 m 2 are the slopes of L 1 L 1 and L 2 L 2 respectively. ( Hint: Use the fact that tan θ 1 = m 1 tan θ 1 = m 1 and tan θ 2 = m 2 . tan θ 2 = m 2 . ) Figure 7",,,,,,,,,,,,,
 trig11,problem,Investigating a Guy-wire Problem,,,,,,,,,,,,,
-trig11,step,"Investigating a Guy-wire Problem
-          For a climbing wall, a guy-wire 𝑅RR is attached 47 feet high on a vertical pole. Added support is provided by another guy-wire 𝑆SS attached 40 feet above ground on the same pole. If the wires are attached to the ground 50 feet from the pole, find the angle 𝛼αα between the wires. See Figure 8.
-
-          
-              
-            
-          
-  Figure 
-8",,,,,,,,,,,,,
+trig11,step,"For a climbing wall, a guy-wire R R is attached 47 feet high on a vertical pole. Added support is provided by another guy-wire S S attached 40 feet above ground on the same pole. If the wires are attached to the ground 50 feet from the pole, find the angle α α between the wires. See Figure 8 . Figure 8",,,,,,,,,,,,,
