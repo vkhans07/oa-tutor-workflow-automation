@@ -6,6 +6,11 @@ from bs4 import BeautifulSoup
 from bs4.element import NavigableString
 import pandas as pd
 from dataclasses import dataclass, field
+import vertexai
+from vertexai.generative_models import GenerativeModel, GenerationConfig
+import pandas as pd
+import io
+import os
 
 # Google Sheets Setup
 precalc_url = "https://docs.google.com/spreadsheets/d/10ym29sQyL_axXC-I2xJ2Fexk8eVgR-c74Rxsu3TG_RY/edit?gid=73476181#gid=73476181"
@@ -19,16 +24,15 @@ df = df.iloc[:, :16]
 df = df.loc[:, ~df.columns.str.contains('^Unnamed')]
 df = df.loc[:, df.columns != '']
 
-import vertexai
-from vertexai.generative_models import GenerativeModel, GenerationConfig
-import pandas as pd
-import io
+gold_df = pd.read_excel("gold.xlsx", dtype=str).fillna('')
+project_id = json.load(open('credentials.json'))['project_id']
 
 # Initialize Vertex AI
-vertexai.init(project="YOUR_PROJECT_ID", location="us-central1")
+os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "credentials.json"
+vertexai.init(project=project_id, location="us-central1")
 
 # Use Gemini 1.5 Pro for complex formatting and reasoning tasks
-model = GenerativeModel("gemini-1.5-pro-001")
+model = GenerativeModel("gemini-2.0-flash-001")
 
 def populate_dataframe_with_gemini(gold_df: pd.DataFrame, new_df: pd.DataFrame) -> pd.DataFrame:
     """
@@ -102,14 +106,6 @@ openstax KC
 KC
 Taxonomy
 License
-Unnamed: 16
-Unnamed: 17
-Validator Check
-Time Last Checked
-Debug Link
-Problem ID
-Lesson ID
-Image Checksum
 
 Column order must remain identical.
 
@@ -437,6 +433,45 @@ Transform the NEW INPUT CSV into the curriculum format using the GOLD STANDARD a
         print(f"Failed to parse CSV. Raw output was:\n{clean_csv_string}")
         raise e
 
+def process_dataframe_in_chunks(gold_df: pd.DataFrame, new_df: pd.DataFrame, problems_per_chunk: int = 3) -> pd.DataFrame:
+    """
+    Chunks the new_df by Problem Name, passes each chunk to Gemini, 
+    and concatenates the results to avoid token limits.
+    """
+    
+    # Get a list of all unique problem names (e.g., ['trig1', 'trig2', ...])
+    # We use dropna() just in case there are blank rows at the bottom
+    unique_problems = new_df['Problem Name'].dropna().unique()
+    
+    processed_chunks = []
+    
+    total_chunks = (len(unique_problems) + problems_per_chunk - 1) // problems_per_chunk
+    
+    for i in range(0, len(unique_problems), problems_per_chunk):
+        # Grab the next batch of problem names
+        batch_names = unique_problems[i : i + problems_per_chunk]
+        
+        # Filter the DataFrame to only include rows for these specific problems
+        chunk_df = new_df[new_df['Problem Name'].isin(batch_names)]
+        
+        chunk_num = (i // problems_per_chunk) + 1
+        print(f"Processing chunk {chunk_num} of {total_chunks} (Problems: {', '.join(batch_names)})...")
+        
+        try:
+            # Pass this small chunk to the Gemini function we wrote earlier
+            processed_chunk = populate_dataframe_with_gemini(gold_df, chunk_df)
+            processed_chunks.append(processed_chunk)
+        except Exception as e:
+            print(f"Failed to process chunk {chunk_num}. Skipping to next. Error: {e}")
+            # Depending on how strict you want to be, you might append the raw chunk_df here 
+            # so you don't lose the data, or just let it skip.
+            
+    # Glue all the processed chunks back into one massive DataFrame
+    print("All chunks processed. Assembling final DataFrame...")
+    final_df = pd.concat(processed_chunks, ignore_index=True)
+    
+    return final_df
+
 PART_PREFIX = re.compile(r'^[ⓐⓑⓒⓓⓔⓕⓖⓗ]|\([a-h]\)\s*')
 
 @dataclass
@@ -628,6 +663,9 @@ def main():
     print(new_data.head(20))
     new_data.to_excel("trig_examples.xlsx", index=False)
     print(f"Successfully exported {len(examples)} examples to trig_examples.xlsx!")
+    final_df = process_dataframe_in_chunks(gold_df, new_data, problems_per_chunk=3)
+    final_df.to_excel("final_ready_for_upload.xlsx", index=False)
+    print("Exported successfully to final_ready_for_upload.xlsx!")
 
 if __name__ == "__main__":
     main()
