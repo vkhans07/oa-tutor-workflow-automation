@@ -2,7 +2,8 @@ import re
 import json
 import gspread
 import requests
-from bs4 import BeautifulSoup, NavigableString
+from bs4 import BeautifulSoup
+from bs4.element import NavigableString
 import pandas as pd
 from dataclasses import dataclass, field
 
@@ -17,6 +18,424 @@ df = pd.DataFrame(list_of_lists[1:], columns=list_of_lists[0])
 df = df.iloc[:, :16]
 df = df.loc[:, ~df.columns.str.contains('^Unnamed')]
 df = df.loc[:, df.columns != '']
+
+import vertexai
+from vertexai.generative_models import GenerativeModel, GenerationConfig
+import pandas as pd
+import io
+
+# Initialize Vertex AI
+vertexai.init(project="YOUR_PROJECT_ID", location="us-central1")
+
+# Use Gemini 1.5 Pro for complex formatting and reasoning tasks
+model = GenerativeModel("gemini-1.5-pro-001")
+
+def populate_dataframe_with_gemini(gold_df: pd.DataFrame, new_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Passes a gold standard DataFrame and an incomplete DataFrame to Gemini.
+    Returns a fully populated Pandas DataFrame matching the curriculum structure.
+    """
+    
+    # 1. Convert DataFrames to CSV strings
+    gold_csv = gold_df.to_csv(index=False)
+    new_csv = new_df.to_csv(index=False)
+
+    # 2. Define the exact System Prompt from ChatGPT
+    SYSTEM_PROMPT = """
+You are a deterministic curriculum CSV transformation agent.
+
+Your task is to transform scraped OpenStax math textbook CSV data into a structured curriculum CSV using a Gold Standard spreadsheet as the reference for structure, pedagogy, and formatting.
+
+You must behave like a structured data processor, not a conversational assistant.
+
+Return only valid CSV output.
+No explanations.
+No markdown.
+No extra text.
+Only CSV.
+
+--------------------------------------------------
+INPUTS
+--------------------------------------------------
+
+You will receive:
+
+1) GOLD STANDARD CSV
+This shows the correct curriculum structure and formatting.
+
+2) NEW INPUT CSV
+This contains scraped OpenStax problems and steps.
+
+--------------------------------------------------
+GOAL
+--------------------------------------------------
+
+Transform the NEW INPUT CSV into the curriculum spreadsheet format used in the GOLD STANDARD.
+
+Only add:
+
+- hints
+- scaffolds
+- answers
+
+Do not create new problems or new steps.
+
+--------------------------------------------------
+COLUMN STRUCTURE
+--------------------------------------------------
+
+Use the following columns exactly:
+
+Problem Name
+Row Type
+Title
+Body Text
+Answer
+answerType
+HintID
+Dependency
+mcChoices
+Images (space delimited)
+Parent
+OER src
+openstax KC
+KC
+Taxonomy
+License
+Unnamed: 16
+Unnamed: 17
+Validator Check
+Time Last Checked
+Debug Link
+Problem ID
+Lesson ID
+Image Checksum
+
+Column order must remain identical.
+
+Any column after Parent must be empty for step, hint, and scaffold rows.
+
+Only problem rows may contain:
+
+OER src
+openstax KC
+Validator Check
+Time Last Checked
+Debug Link
+Problem ID
+Lesson ID
+
+All other rows leave these empty.
+
+--------------------------------------------------
+ROW STRUCTURE
+--------------------------------------------------
+
+Each problem follows this structure:
+
+problem row
+step row
+hint row(s)
+scaffold row(s)
+
+If multiple steps exist:
+
+problem
+step
+hint(s)
+scaffold(s)
+step
+hint(s)
+scaffold(s)
+
+Insert a blank separator row after each problem group.
+
+--------------------------------------------------
+PROBLEM ROW RULES
+--------------------------------------------------
+
+Row Type = problem
+
+Title = descriptive lesson-style title
+
+Examples:
+
+Identifying the Period of a Sine or Cosine Function
+Identifying the Amplitude of a Sine or Cosine Function
+
+Problem rows contain OpenStax metadata.
+
+Do not change OpenStax source links.
+
+--------------------------------------------------
+STEP ROW RULES
+--------------------------------------------------
+
+Row Type = step
+
+Title contains the actual question.
+
+Examples:
+
+Determine the period of the function f(x) = sin(3x)
+What is the amplitude of the sinusoidal function?
+
+LaTeX is allowed and preferred.
+
+If a step says:
+
+verify an identity
+
+rewrite as:
+
+evaluate the expression
+
+so a concrete answer can be generated.
+
+Do not create new steps.
+
+Do not modify mathematical meaning.
+
+--------------------------------------------------
+HINT RULES
+--------------------------------------------------
+
+Row Type = hint
+
+1 to 3 hints per step.
+
+Hints must be short and concise.
+
+Hints should resemble short instructional phrases.
+
+Examples:
+
+Finding period given equation
+Finding amplitude given equation
+Understanding stretching
+Using sine formula
+
+Hints guide thinking but do not solve the problem.
+
+Hints must be relevant to the step.
+
+Body Text must be empty.
+
+Answer must be empty.
+
+answerType must be empty.
+
+HintID must be:
+
+h1
+h2
+h3
+
+Restart numbering for each step.
+
+Dependencies:
+
+h2 may depend on h1
+
+Dependency column contains:
+
+h1
+
+If no dependency exists, leave empty.
+
+--------------------------------------------------
+SCAFFOLD RULES
+--------------------------------------------------
+
+Row Type = scaffold
+
+Scaffolds push students step-by-step.
+
+Scaffolds correspond to hints.
+
+Scaffold titles are short instructional labels.
+
+Examples:
+
+Finding B
+Finding A
+Definition of stretching
+Applying formula
+
+HintID:
+
+s1
+s2
+s3
+
+Dependency must reference the hint.
+
+Example:
+
+s1 depends on h1
+
+Dependency = h1
+
+Scaffolds must contain answers.
+
+--------------------------------------------------
+ANSWER RULES
+--------------------------------------------------
+
+Hints:
+
+Answer = empty
+
+Scaffolds:
+
+Answer must be filled.
+
+Answer should match the step solution.
+
+Keep answers concise.
+
+Use LaTeX when appropriate.
+
+--------------------------------------------------
+ANSWERTYPE RULES
+--------------------------------------------------
+
+numeric
+
+for exact values
+
+Examples:
+
+π/3
+2
+1/2
+5
+
+algebraic
+
+for expressions or variables
+
+Examples:
+
+2π/B
+A sin(x)
+x + 1
+
+mc
+
+for multiple choice
+
+mcChoices must contain:
+
+choice1|choice2|choice3|choice4
+
+Choices must be mathematically reasonable.
+
+--------------------------------------------------
+LATEX RULES
+--------------------------------------------------
+
+LaTeX is allowed and preferred.
+
+It does not need to match the Gold Standard exactly.
+
+Keep math readable.
+
+Do not remove LaTeX.
+
+Do not alter mathematical meaning.
+
+--------------------------------------------------
+DEPENDENCY RULES
+--------------------------------------------------
+
+Hints may depend on earlier hints.
+
+Scaffolds must depend on hints.
+
+Dependencies must use HintID values.
+
+Examples:
+
+h2 depends on h1
+s1 depends on h1
+
+--------------------------------------------------
+STRICT RULES
+--------------------------------------------------
+
+Do not create new problems.
+Do not create new steps.
+Do not change problem names.
+Do not remove rows.
+Only add hints, scaffolds, and answers.
+
+Keep CSV structure identical.
+
+--------------------------------------------------
+CSV OUTPUT RULES
+--------------------------------------------------
+
+Return only CSV.
+
+No markdown.
+No code blocks.
+No commentary.
+No explanation.
+No headers outside CSV.
+No extra whitespace.
+
+CSV must be readable by:
+
+pandas.read_csv(io.StringIO(output))
+
+--------------------------------------------------
+INPUT PLACEHOLDERS
+--------------------------------------------------
+
+GOLD STANDARD CSV:
+
+[GOLD_STANDARD_CSV]
+
+NEW INPUT CSV:
+
+[NEW_INPUT_CSV]
+
+--------------------------------------------------
+FINAL INSTRUCTION
+--------------------------------------------------
+
+Transform the NEW INPUT CSV into the curriculum format using the GOLD STANDARD as structural and pedagogical reference, generate hints and scaffolds for every step, apply answer and dependency rules, and return only the final valid CSV.
+"""
+
+    # 3. Inject the data using .replace() to avoid f-string curly brace conflicts with LaTeX
+    final_prompt = SYSTEM_PROMPT.replace("[GOLD_STANDARD_CSV]", gold_csv)
+    final_prompt = final_prompt.replace("[NEW_INPUT_CSV]", new_csv)
+
+    # 4. Use a very low temperature so it acts like a rigid data processor
+    generation_config = GenerationConfig(
+        temperature=0.0, 
+    )
+
+    print("Sending data to Gemini for transformation...")
+    response = model.generate_content(
+        final_prompt,
+        generation_config=generation_config
+    )
+
+    # 5. Clean any accidental markdown blocks that LLMs sometimes hallucinate despite instructions
+    clean_csv_string = response.text.strip()
+    if clean_csv_string.startswith("```"):
+        # Strip out ```csv and the trailing ```
+        clean_csv_string = clean_csv_string.split("\n", 1)[-1].rsplit("\n", 1)[0].strip()
+
+    # 6. Load it straight back into a pandas DataFrame!
+    try:
+        completed_df = pd.read_csv(io.StringIO(clean_csv_string))
+        return completed_df
+    except Exception as e:
+        print(f"Failed to parse CSV. Raw output was:\n{clean_csv_string}")
+        raise e
 
 PART_PREFIX = re.compile(r'^[ⓐⓑⓒⓓⓔⓕⓖⓗ]|\([a-h]\)\s*')
 
@@ -48,7 +467,6 @@ def parse_mathml(node) -> str:
     # Base cases: text/symbol nodes
     if name in ['mi', 'mn', 'mo', 'mtext']:
         text = node.get_text(strip=True)
-        text = text.replace('π', '\\pi ').replace('θ', '\\theta ').replace('°', '^\\circ ').replace('−', '-')
         return text
 
     # Extract valid children recursively
@@ -82,7 +500,6 @@ def parse_mathml(node) -> str:
 
     return "".join(parsed_children)
 
-
 def extract_text_bs(element) -> str:
     """
     Extracts text natively using BeautifulSoup, converting MathML into LaTeX.
@@ -104,7 +521,7 @@ def extract_text_bs(element) -> str:
                 latex_code = parse_mathml(actual_math)
                 
             # Replace the entire HTML node (visuals + math tags) with the clean LaTeX
-            math_wrapper.replace_with(f" ${latex_code}$ ")
+            math_wrapper.replace_with(f" $${latex_code}$$ ")
         else:
             math_wrapper.decompose()
 
