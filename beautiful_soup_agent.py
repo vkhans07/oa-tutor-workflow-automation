@@ -6,9 +6,10 @@ from bs4 import BeautifulSoup
 from bs4.element import NavigableString
 import pandas as pd
 from dataclasses import dataclass, field
-import vertexai
-from vertexai.generative_models import GenerativeModel, GenerationConfig
-import pandas as pd
+import google.genai as genai
+from google.genai import types
+from google.genai.types import GenerationConfig
+from dotenv import load_dotenv
 import io
 import os
 
@@ -24,15 +25,14 @@ df = df.iloc[:, :16]
 df = df.loc[:, ~df.columns.str.contains('^Unnamed')]
 df = df.loc[:, df.columns != '']
 
+load_dotenv()
 gold_df = pd.read_excel("gold.xlsx", dtype=str).fillna('')
-project_id = json.load(open('credentials.json'))['project_id']
+my_api_key = os.getenv("GEMINI_API_KEY")
 
-# Initialize Vertex AI
-os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "credentials.json"
-vertexai.init(project=project_id, location="us-central1")
 
-# Use Gemini 1.5 Pro for complex formatting and reasoning tasks
-model = GenerativeModel("gemini-2.0-flash-001")
+# Put your AI Studio API key here
+client = genai.Client(api_key=my_api_key)
+
 
 def populate_dataframe_with_gemini(gold_df: pd.DataFrame, new_df: pd.DataFrame) -> pd.DataFrame:
     """
@@ -46,362 +46,53 @@ def populate_dataframe_with_gemini(gold_df: pd.DataFrame, new_df: pd.DataFrame) 
 
     # 2. Define the exact System Prompt from ChatGPT
     SYSTEM_PROMPT = """
-You are a deterministic curriculum CSV transformation agent.
-
-Your task is to transform scraped OpenStax math textbook CSV data into a structured curriculum CSV using a Gold Standard spreadsheet as the reference for structure, pedagogy, and formatting.
-
-You must behave like a structured data processor, not a conversational assistant.
-
-Return only valid CSV output.
-No explanations.
-No markdown.
-No extra text.
-Only CSV.
-
---------------------------------------------------
+You are a deterministic curriculum CSV transformation agent. Return only valid semicolon-delimited CSV. No markdown, no code blocks, no commentary, no extra text.
+ 
 INPUTS
---------------------------------------------------
-
-You will receive:
-
-1) GOLD STANDARD CSV
-This shows the correct curriculum structure and formatting.
-
-2) NEW INPUT CSV
-This contains scraped OpenStax problems and steps.
-
---------------------------------------------------
+1
+) GOLD STANDARD CSV — reference for structure, pedagogy, and formatting.
+2) NEW INPUT CSV — scraped OpenStax problems and steps to be transformed.
+ 
 GOAL
---------------------------------------------------
-
-Transform the NEW INPUT CSV into the curriculum spreadsheet format used in the GOLD STANDARD.
-
-Only add:
-
-- hints
-- scaffolds
-- answers
-
-Do not create new problems or new steps.
-
---------------------------------------------------
-COLUMN STRUCTURE
---------------------------------------------------
-
-Use the following columns exactly:
-
-Problem Name
-Row Type
-Title
-Body Text
-Answer
-answerType
-HintID
-Dependency
-mcChoices
-Images (space delimited)
-Parent
-OER src
-openstax KC
-KC
-Taxonomy
-License
-
-Column order must remain identical.
-
-Any column after Parent must be empty for step, hint, and scaffold rows.
-
-Only problem rows may contain:
-
-OER src
-openstax KC
-Validator Check
-Time Last Checked
-Debug Link
-Problem ID
-Lesson ID
-
-All other rows leave these empty.
-
---------------------------------------------------
-ROW STRUCTURE
---------------------------------------------------
-
-Each problem follows this structure:
-
-problem row
-step row
-hint row(s)
-scaffold row(s)
-
-If multiple steps exist:
-
-problem
-step
-hint(s)
-scaffold(s)
-step
-hint(s)
-scaffold(s)
-
-Insert a blank separator row after each problem group.
-
---------------------------------------------------
-PROBLEM ROW RULES
---------------------------------------------------
-
-Row Type = problem
-
-Title = descriptive lesson-style title
-
-Examples:
-
-Identifying the Period of a Sine or Cosine Function
-Identifying the Amplitude of a Sine or Cosine Function
-
-Problem rows contain OpenStax metadata.
-
-Do not change OpenStax source links.
-
---------------------------------------------------
-STEP ROW RULES
---------------------------------------------------
-
-Row Type = step
-
-Title contains the actual question.
-
-Examples:
-
-Determine the period of the function f(x) = sin(3x)
-What is the amplitude of the sinusoidal function?
-
-LaTeX is allowed and preferred.
-
-If a step says:
-
-verify an identity
-
-rewrite as:
-
-evaluate the expression
-
-so a concrete answer can be generated.
-
-Do not create new steps.
-
-Do not modify mathematical meaning.
-
---------------------------------------------------
-HINT RULES
---------------------------------------------------
-
-Row Type = hint
-
-1 to 3 hints per step.
-
-Hints must be short and concise.
-
-Hints should resemble short instructional phrases.
-
-Examples:
-
-Finding period given equation
-Finding amplitude given equation
-Understanding stretching
-Using sine formula
-
-Hints guide thinking but do not solve the problem.
-
-Hints must be relevant to the step.
-
-Body Text must be empty.
-
-Answer must be empty.
-
-answerType must be empty.
-
-HintID must be:
-
-h1
-h2
-h3
-
-Restart numbering for each step.
-
-Dependencies:
-
-h2 may depend on h1
-
-Dependency column contains:
-
-h1
-
-If no dependency exists, leave empty.
-
---------------------------------------------------
-SCAFFOLD RULES
---------------------------------------------------
-
-Row Type = scaffold
-
-Scaffolds push students step-by-step.
-
-Scaffolds correspond to hints.
-
-Scaffold titles are short instructional labels.
-
-Examples:
-
-Finding B
-Finding A
-Definition of stretching
-Applying formula
-
-HintID:
-
-s1
-s2
-s3
-
-Dependency must reference the hint.
-
-Example:
-
-s1 depends on h1
-
-Dependency = h1
-
-Scaffolds must contain answers.
-
---------------------------------------------------
-ANSWER RULES
---------------------------------------------------
-
-Hints:
-
-Answer = empty
-
-Scaffolds:
-
-Answer must be filled.
-
-Answer should match the step solution.
-
-Keep answers concise.
-
-Use LaTeX when appropriate.
-
---------------------------------------------------
-ANSWERTYPE RULES
---------------------------------------------------
-
-numeric
-
-for exact values
-
-Examples:
-
-π/3
-2
-1/2
-5
-
-algebraic
-
-for expressions or variables
-
-Examples:
-
-2π/B
-A sin(x)
-x + 1
-
-mc
-
-for multiple choice
-
-mcChoices must contain:
-
-choice1|choice2|choice3|choice4
-
-Choices must be mathematically reasonable.
-
---------------------------------------------------
-LATEX RULES
---------------------------------------------------
-
-LaTeX is allowed and preferred.
-
-It does not need to match the Gold Standard exactly.
-
-Keep math readable.
-
-Do not remove LaTeX.
-
-Do not alter mathematical meaning.
-
---------------------------------------------------
-DEPENDENCY RULES
---------------------------------------------------
-
-Hints may depend on earlier hints.
-
-Scaffolds must depend on hints.
-
-Dependencies must use HintID values.
-
-Examples:
-
-h2 depends on h1
-s1 depends on h1
-
---------------------------------------------------
-STRICT RULES
---------------------------------------------------
-
-Do not create new problems.
-Do not create new steps.
-Do not change problem names.
-Do not remove rows.
-Only add hints, scaffolds, and answers.
-
-Keep CSV structure identical.
-
---------------------------------------------------
-CSV OUTPUT RULES
---------------------------------------------------
-
-Return only CSV.
-
-No markdown.
-No code blocks.
-No commentary.
-No explanation.
-No headers outside CSV.
-No extra whitespace.
-
-CSV must be readable by:
-
-pandas.read_csv(io.StringIO(output))
-
---------------------------------------------------
-INPUT PLACEHOLDERS
---------------------------------------------------
-
+Add hints, scaffolds, and answers to every step in the NEW INPUT CSV. Do not create, remove, or rename any problem or step rows.
+ 
+OUTPUT FORMAT
+The output must begin with exactly this header line:
+Problem Name;Row Type;Title;Body Text;Answer;answerType;HintID;Dependency;mcChoices;Images (space delimited);Parent;OER src;openstax KC;KC;Taxonomy;License
+ 
+Every row must contain exactly 16 semicolons. Empty fields must still be delimited (write ;; not ;). Never add a leading or trailing semicolon.
+ 
+ROW STRUCTURE (per problem group, followed by one blank row)
+  problem → step → hint(s) → scaffold(s) [repeat step block if multiple steps]
+ 
+PROBLEM ROWS
+  Row Type = problem. Title = descriptive lesson-style title (e.g. "Finding the Exact Value Using the Cosine Difference Formula"). Do not alter OpenStax metadata or source links. Columns after Parent are empty for non-problem rows.
+ 
+STEP ROWS
+  Row Type = step. Title = the actual question, LaTeX preferred. If a step says "verify an identity", rewrite Title as "evaluate the expression" so a concrete answer exists. Do not modify mathematical meaning.
+ 
+HINT ROWS (1–3 per step)
+  Row Type = hint. HintID = h1, h2, h3 (restart each step).
+  Title = short phrase naming the concept (e.g. "Applying the cosine difference formula").
+  Body Text = brief helpful explanation or context (e.g. "Recall that cos(A−B) = cos(A)cos(B) + sin(A)sin(B)").
+  Answer and answerType = empty. h2 may list h1 in Dependency; otherwise Dependency is empty.
+ 
+SCAFFOLD ROWS (one per hint)
+  Row Type = scaffold. HintID = s1, s2, s3 (restart each step). Dependency = corresponding hN.
+  Title = short instructional label (e.g. "Identify A and B in the expression").
+  Body Text = guiding sub-question or partial step (e.g. "In cos(5π/4 − π/6), what are A and B?").
+  Answer = concise answer, LaTeX preferred. answerType = numeric (exact value), algebraic (expression/variable), or mc (multiple choice; mcChoices = choice1|choice2|choice3|choice4).
+ 
+DEPENDENCIES
+  Hints may depend on earlier hints. Scaffolds must reference their corresponding hint. Use HintID values only.
+ 
 GOLD STANDARD CSV:
-
 [GOLD_STANDARD_CSV]
-
+ 
 NEW INPUT CSV:
-
 [NEW_INPUT_CSV]
-
---------------------------------------------------
-FINAL INSTRUCTION
---------------------------------------------------
-
-Transform the NEW INPUT CSV into the curriculum format using the GOLD STANDARD as structural and pedagogical reference, generate hints and scaffolds for every step, apply answer and dependency rules, and return only the final valid CSV.
+ 
+Transform the NEW INPUT CSV using the GOLD STANDARD as reference. Generate hints and scaffolds for every step. Return only the final semicolon-delimited CSV starting with the header line above.
 """
 
     # 3. Inject the data using .replace() to avoid f-string curly brace conflicts with LaTeX
@@ -414,9 +105,10 @@ Transform the NEW INPUT CSV into the curriculum format using the GOLD STANDARD a
     )
 
     print("Sending data to Gemini for transformation...")
-    response = model.generate_content(
-        final_prompt,
-        generation_config=generation_config
+    response = client.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=final_prompt,
+        config=types.GenerateContentConfig(temperature=0.0)
     )
 
     # 5. Clean any accidental markdown blocks that LLMs sometimes hallucinate despite instructions
@@ -426,8 +118,9 @@ Transform the NEW INPUT CSV into the curriculum format using the GOLD STANDARD a
         clean_csv_string = clean_csv_string.split("\n", 1)[-1].rsplit("\n", 1)[0].strip()
 
     # 6. Load it straight back into a pandas DataFrame!
+    # on_bad_lines='skip' tolerates occasional extra-comma rows Gemini produces
     try:
-        completed_df = pd.read_csv(io.StringIO(clean_csv_string))
+        completed_df = pd.read_csv(io.StringIO(clean_csv_string), sep=';', dtype=str, on_bad_lines='skip').fillna('')
         return completed_df
     except Exception as e:
         print(f"Failed to parse CSV. Raw output was:\n{clean_csv_string}")
@@ -462,12 +155,14 @@ def process_dataframe_in_chunks(gold_df: pd.DataFrame, new_df: pd.DataFrame, pro
             processed_chunk = populate_dataframe_with_gemini(gold_df, chunk_df)
             processed_chunks.append(processed_chunk)
         except Exception as e:
-            print(f"Failed to process chunk {chunk_num}. Skipping to next. Error: {e}")
-            # Depending on how strict you want to be, you might append the raw chunk_df here 
-            # so you don't lose the data, or just let it skip.
+            print(f"Failed to process chunk {chunk_num}. Falling back to raw data. Error: {e}")
+            # Preserve the raw scraped data so no problems are silently dropped
+            processed_chunks.append(chunk_df)
             
     # Glue all the processed chunks back into one massive DataFrame
     print("All chunks processed. Assembling final DataFrame...")
+    if not processed_chunks:
+        raise ValueError("No chunks were successfully processed. Check Gemini responses above.")
     final_df = pd.concat(processed_chunks, ignore_index=True)
     
     return final_df
