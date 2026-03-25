@@ -207,14 +207,12 @@ class OATutorAgent:
 
         return examples
     
-    def df_population(self, questions: list[Question], use_default_stem: bool = True, problem_name_stem: str = '') -> pd.DataFrame:
+    def df_population(self, questions: list[Question], use_default_stem: bool = True, problem_name_stem: str = '', number=1, index=0) -> pd.DataFrame:
         if use_default_stem and problem_name_stem:
             raise ValueError("Cannot use default stem and custom stem simultaneously. Please choose one.")
         if use_default_stem:
             problem_name_stem = self.name
         new_data = pd.DataFrame(columns=self.columns, dtype=str)
-        number = 1
-        index = 0
 
         for q in questions:
             if len(q.problems) == 0:
