@@ -352,6 +352,7 @@ def df_population(questions: list[Question], problem_name_stem: str = '') -> pd.
     return new_data.fillna('')
 
 def main():
+    print(df.columns)
     examples = scrape_examples(book_url)
     new_data = df_population(examples, problem_name_stem='trig')
     pd.set_option('display.max_colwidth', None)
