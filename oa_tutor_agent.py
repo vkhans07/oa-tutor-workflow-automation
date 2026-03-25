@@ -225,6 +225,7 @@ class OATutorAgent:
             new_data.loc[index, 'Row Type'] = 'problem'
             new_data.loc[index, 'Title'] = q.title
             new_data.loc[index, 'Body Text'] = q.body_text
+            new_data.loc[index, 'OER src'] = self.book_url
             index += 1
 
             for p in q.problems:
@@ -273,6 +274,9 @@ class OATutorAgent:
             
             STEP ROWS
             Row Type = step. Title = the actual question, LaTeX preferred. If a step says "verify an identity", rewrite Title as "evaluate the expression" so a concrete answer exists. Do not modify mathematical meaning.
+            Answer = concise answer, LaTeX preferred. answerType = numeric (exact value), algebraic (multiple forms/expression/variable), or mc (multiple choice; mcChoices = choice1|choice2|choice3|choice4, with the correct answer listed under Answer).
+            If a question would demand multiple answers (e.g. "Solve the triangle..."), break it into multiple step rows with distinct questions and single answers (e.g. "Find angle A", "Find side a", etc). Answer must be concise, ideally a single number or variable.
+            If not possible, use answerType = mc with 4 choices and only one correct answer listed under Answer.
             
             HINT ROWS (1–3 per step)
             Row Type = hint. HintID = h1, h2, h3 (restart each step).
@@ -284,7 +288,8 @@ class OATutorAgent:
             Row Type = scaffold. HintID = s1, s2, s3 (restart each step). Dependency = corresponding hN.
             Title = short instructional label (e.g. "Identify A and B in the expression").
             Body Text = guiding sub-question or partial step (e.g. "In cos(5π/4 − π/6), what are A and B?").
-            Answer = concise answer, LaTeX preferred. answerType = numeric (exact value), algebraic (expression/variable), or mc (multiple choice; mcChoices = choice1|choice2|choice3|choice4).
+            Answer = concise answer, LaTeX preferred. answerType = numeric (exact value), algebraic (multiple forms/expression/variable), or mc (multiple choice; mcChoices = choice1|choice2|choice3|choice4, with the correct answer listed under Answer).
+            Ask for a single number or variable when possible. If it is unreasonable to expect a single answer, return answerType = mc with 4 choices, one of which is correct. 
             
             DEPENDENCIES
             Hints may depend on earlier hints. Scaffolds must reference their corresponding hint. Use HintID values only.
