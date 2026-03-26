@@ -2,23 +2,7 @@ from oa_tutor_agent import OATutorAgent
 import pandas as pd
 
 def main():
-    agent = OATutorAgent(
-        name="trig",
-        sheet_name="trig_sheet",
-        book_url = "https://openstax.org/books/precalculus-2e/pages/7-2-sum-and-difference-identities",
-        gold_df = pd.read_excel("gold.xlsx")
-    )
-
-    agent.generate_curriculum()
-
-    agent_angle = OATutorAgent(
-        name="angle",
-        sheet_name="angle_sheet",
-        book_url="https://openstax.org/books/precalculus-2e/pages/7-3-double-angle-half-angle-and-reduction-formulas",
-        gold_df = pd.read_excel("gold.xlsx")
-    )
-    agent_angle.generate_curriculum()
-
+   
     agent_sumprod = OATutorAgent(
         name="sumprod",
         sheet_name="sumprod_sheet",
