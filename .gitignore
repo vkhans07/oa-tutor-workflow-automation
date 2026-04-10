@@ -1,6 +1,6 @@
 credentials.json
 .env
 __pycache__/
-.xlsx
-.csv
+*.xlsx
+*.csv
 uploadable excel files/
