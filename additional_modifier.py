@@ -2,6 +2,7 @@ import pandas as pd
 import google.genai as genai
 from google.genai import types
 import io
+from oa_tutor_agent import OATutorAgent
 import os
 from dotenv import load_dotenv
  
@@ -85,16 +86,23 @@ def additional_modifier(input_xlsx, problems_per_chunk=5, model_name="gemini-2.5
 
 def main():
 
-    for filename in os.listdir('.'):
-        if filename.endswith('final_ready_for_upload.xlsx'):
-            print(f'processing {filename}...')
-            try:
-                modified_df = additional_modifier(filename)
-                output_filename = filename.replace('final_ready_for_upload.xlsx', 'modified.xlsx')
-                modified_df.to_excel(output_filename, index=False)
-                print(f'Saved modified XLSX to {output_filename}')
-            except Exception as e:
-                print(f'Error processing {filename}: {e}')
+    # agent_sumprod = OATutorAgent(
+    #     name="sumprod",
+    #     sheet_name="sumprod_sheet",
+    #     book_url="https://openstax.org/books/precalculus-2e/pages/7-4-sum-to-product-and-product-to-sum-formulas",
+    #     gold_df = pd.read_excel("gold.xlsx")
+    # )
+    # agent_sumprod.generate_curriculum()
+
+    filename = "sumprod_final_ready_for_upload.xlsx"
+
+    try:
+        modified_df = additional_modifier(filename)
+        output_filename = filename.replace('final_ready_for_upload.xlsx', 'modified.xlsx')
+        modified_df.to_excel(output_filename, index=False)
+        print(f'Saved modified XLSX to {output_filename}')
+    except Exception as e:
+        print(f'Error processing {filename}: {e}')
 
 if __name__ == "__main__":
     main()
