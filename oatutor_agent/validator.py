@@ -11,6 +11,15 @@ import re
 import argparse
 import datetime
 import openpyxl
+from dataclasses import dataclass, field as dc_field
+
+
+@dataclass
+class Issue:
+    row:     int
+    code:    str
+    context: dict = dc_field(default_factory=dict)
+    fixable: bool = True
 
 # Column mapping for easy reference
 C = {
@@ -58,7 +67,7 @@ def detect_format(text):
 
 # ─── Main validator ─────────────────────────────────────────────────────────
 
-def validate(target_path, auto_fix=False, sheet_name=None):
+def validate(target_path, auto_fix=False, sheet_name=None, return_issues=False):
     wb = openpyxl.load_workbook(target_path)
     ws = wb[sheet_name] if sheet_name else wb.active
 
@@ -180,12 +189,16 @@ def validate(target_path, auto_fix=False, sheet_name=None):
                             sv(ws, rn, 'HintID', expected_hid)
                             fixes.append(f'Row {rn}: HintID {hid!r} → {expected_hid!r}')
 
-                    if int(dep[1:]) >= int(expected_hid[1:])
-                        addr(rn, f'Hint Dependency {dep!r} refers to a future hint')
-                        if auto_fix:
-                            expected_dep = f'h{h_count - 1}' if h_count > 1 else None
-                            sv(ws, rn, 'Dependency', expected_dep or None)
-                            fixes.append(f'Row {rn}: Dependency {dep!r} → {expected_dep!r}')
+                    if dep and dep.startswith('h'):
+                        try:
+                            if int(dep[1:]) >= h_count:
+                                addr(rn, f'Hint Dependency {dep!r} refers to a future hint')
+                                if auto_fix:
+                                    expected_dep = f'h{h_count - 1}' if h_count > 1 else None
+                                    sv(ws, rn, 'Dependency', expected_dep or None)
+                                    fixes.append(f'Row {rn}: Dependency {dep!r} → {expected_dep!r}')
+                        except ValueError:
+                            addr(rn, f'Hint Dependency {dep!r} is not a valid hint ID')
 
                     if ans:
                         addr(rn, f'Hint has non-empty Answer {ans!r} (should be empty)')
@@ -298,6 +311,44 @@ def validate(target_path, auto_fix=False, sheet_name=None):
         print(f"\nAuto-fixed {len(fixes)} issue(s):")
         for f in fixes:
             print(f"  → {f}")
+
+    if return_issues:
+        return _build_issue_list(issues, row_issues)
+
+
+def _build_issue_list(issues, row_issues):
+    structured = []
+    unfixable  = {'MISSING_OER', 'MISSING_STEPS', 'BAD_PROBLEM_NAME'}
+    for pr, msgs in issues.items():
+        for msg in msgs:
+            code = _msg_to_code(msg)
+            structured.append(Issue(row=pr, code=code, context={'msg': msg},
+                                    fixable=code not in unfixable))
+    for rn, msgs in row_issues.items():
+        for msg in msgs:
+            code = _msg_to_code(msg)
+            structured.append(Issue(row=rn, code=code, context={'msg': msg},
+                                    fixable=code not in unfixable))
+    return structured
+
+
+def _msg_to_code(msg):
+    m = msg.lower()
+    if 'hintid' in m and 'expected' in m:              return 'BAD_HINT_ID'
+    if 'scaffoldid' in m and 'expected' in m:          return 'BAD_SCAFFOLD_ID'
+    if 'dependency' in m and ('future' in m or 'expected' in m): return 'BAD_DEPENDENCY'
+    if 'step row has hintid' in m:                     return 'STRAY_HINTID_ON_STEP'
+    if 'step row has dependency' in m:                 return 'STRAY_DEP_ON_STEP'
+    if 'mcchoices set but' in m:                       return 'MC_CHOICES_ON_NON_MC'
+    if 'hint has non-empty answer' in m:               return 'HINT_HAS_ANSWER'
+    if 'scaffold missing answer' in m:                 return 'MISSING_ANSWER'
+    if 'answertype' in m and 'not valid' in m:         return 'MISSING_ANSWER_TYPE'
+    if 'missing taxonomy' in m:                        return 'MISSING_TAXONOMY'
+    if 'missing kc' in m:                              return 'MISSING_KC'
+    if 'missing oer' in m:                             return 'MISSING_OER'
+    if 'no steps' in m:                                return 'MISSING_STEPS'
+    if 'does not end in a number' in m:                return 'BAD_PROBLEM_NAME'
+    return 'UNKNOWN'
 
 
 # ─── Entry point ────────────────────────────────────────────────────────────
