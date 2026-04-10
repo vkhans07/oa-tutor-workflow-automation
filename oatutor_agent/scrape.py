@@ -166,7 +166,7 @@ class Scraper:
         html = self._fetch_html(self.url)
         soup = BeautifulSoup(html, 'html.parser')
 
-        questions: list[self.Question] = []
+        questions = []
 
         if mode in ('examples', 'both'):
             questions.extend(self._scrape_examples(soup))
