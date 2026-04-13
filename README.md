@@ -1,119 +1,195 @@
-# OATutor Curriculum Generation Pipeline
+# OATutor Content Pipeline
 
-Automated pipeline that scrapes OpenStax textbooks and generates upload-ready curriculum content for the [OATutor](https://oatutor.com) platform using Gemini 2.5 Flash. Reduces manual content authoring time by ~85%.
+Automated pipeline for generating OATutor-formatted curriculum content from OpenStax textbooks. Scrapes examples and exercises, generates hints and scaffolds via Gemini, validates the output against the OATutor spec, and auto-fixes structural issues.
 
-## What it does
+---
 
-Given an OpenStax textbook URL and a gold standard spreadsheet, the pipeline:
-
-1. Fetches raw HTML via the OpenStax archive API
-2. Converts MathML → LaTeX (uses native annotations where available, custom recursive compiler as fallback)
-3. Scrapes **examples** (all) and **exercises** (Verbal and Algebraic sections only)
-4. Populates structured DataFrames of problem and step rows
-5. Sends chunks to Gemini, which generates hints, scaffolds, and answers in OATutor format
-6. Runs a post-processing pass to convert any free-text scaffold answers that are unreasonable to grade (functions, multi-value answers, complex expressions) to multiple choice
-
-## Output format
-
-Semicolon-delimited CSV, 16 columns:
+## Directory Structure
 
 ```
-Problem Name;Row Type;Title;Body Text;Answer;answerType;HintID;Dependency;mcChoices;Images (space delimited);Parent;OER src;openstax KC;KC;Taxonomy;License
+oatutor/
+├── agent.py            # orchestrator — runs the full pipeline
+├── scrape.py           # scrapes OpenStax pages into a raw DataFrame
+├── generate_hints.py   # sends raw DataFrame to Gemini, returns populated DataFrame
+├── validator.py        # validates the xlsx against the OATutor spec
+├── fixer.py            # fixes structural issues; uses Gemini for content issues
+├── requirements.txt
+│
+├── gold_workbooks/     # reference xlsx files used to guide Gemini's output
+└── input_workbooks/    # pipeline outputs land here (timestamped)
 ```
 
-Each problem group follows the structure:
-```
-problem → step → hint(s) → scaffold(s)
-```
-followed by a blank separator row. Hints have a concept-label Title and explanatory Body Text. Scaffolds have a guiding Title, sub-question Body Text, a concise Answer, and an answerType of `numeric`, `algebraic`, or `mc`.
+---
 
 ## Setup
 
 ```bash
-pip install google-generativeai beautifulsoup4 pandas openpyxl gspread python-dotenv requests
+pip install -r requirements.txt
 ```
 
-Create a `.env` file:
+Create a `.env` file in the project root:
+
 ```
 GEMINI_API_KEY=your_key_here
 ```
 
-For Google Sheets integration, place your `credentials.json` service account file in the project root.
+---
 
-## Usage
+## Running the Pipeline
 
-```python
-from oa_tutor_agent import OATutorAgent
-import pandas as pd
-
-gold_df = pd.read_excel("gold.xlsx", dtype=str).fillna('')
-
-agent = OATutorAgent(
-    name="trig72",
-    sheet_name="7.2 - Sum and Difference Identities",
-    book_url="https://openstax.org/books/precalculus-2e/pages/7-2-sum-and-difference-identities",
-    gold_df=gold_df
-)
-
-agent.generate_curriculum()
-# Outputs: trig72_raw.xlsx, trig72_final_ready_for_upload.xlsx
+### Full pipeline (most common)
+```bash
+python agent.py --url <openstax_url> --name <stem> --gold <gold_file>
 ```
 
-Then run the post-processing modifier:
-
-```python
-from additional_modifier import additional_modifier
-
-modified_df = additional_modifier("trig72_final_ready_for_upload.xlsx", problems_per_chunk=5)
-modified_df.to_excel("trig72_modified.xlsx", index=False)
+Example:
+```bash
+python agent.py \
+  --url https://openstax.org/books/precalculus-2e/pages/8-8-vectors \
+  --name vector \
+  --gold gold.xlsx
 ```
 
-## Project structure
+This runs all 5 stages:
+1. **Scrape** — fetches the OpenStax page and extracts problems into a raw xlsx
+2. **Generate** — sends problems to Gemini in chunks, fills in hints/scaffolds/answers
+3. **Validate (pre-fix)** — checks the output against the spec, writes issues to `Validator Check` column
+4. **Fix** — auto-fixes structural issues; uses Gemini for missing answers/taxonomy/KC
+5. **Validate (post-fix)** — confirms fixes took, reports any remaining issues
+
+Output is saved to `input_workbooks/<name>_<YYYYMMDD_HHMM>.xlsx`.
+
+### Common flags
+
+| Flag | What it does |
+|------|-------------|
+| `--mode examples` | Scrape worked examples only (default) |
+| `--mode exercises` | Scrape exercise sections only |
+| `--mode both` | Scrape examples then exercises, shared counter |
+| `--chunk 3` | Problems per Gemini call (default: 3, increase for speed, decrease if hitting token limits) |
+| `--sheet "7.2"` | Target a specific worksheet by name (default: active sheet) |
+| `--skip-generate` | Scrape only — outputs raw xlsx without Gemini generation |
+| `--skip-fix` | Validate only — no fixes applied |
+| `--no-content-fix` | Structural fixes only — skips Gemini content fixes (faster, no API cost) |
+| `--gold gold.xlsx` | Filename in `gold_workbooks/` or a full path |
+
+---
+
+## Running Individual Modules
+
+Each module is independently runnable:
+
+```bash
+# Validate a sheet and write issues to the Validator Check column
+python validator.py input_workbooks/vector_20260410_1400.xlsx
+
+# Validate + auto-fix structural issues in one step
+python validator.py input_workbooks/vector_20260410_1400.xlsx --fix
+
+# Fix an already-validated sheet (reads Issue objects from validator)
+python fixer.py input_workbooks/vector_20260410_1400.xlsx
+
+# Fix structural issues only (no Gemini API calls)
+python fixer.py input_workbooks/vector_20260410_1400.xlsx --no-content
+```
+
+---
+
+## The OATutor Spreadsheet Format
+
+Each problem group follows this row structure:
 
 ```
-oa_tutor_agent.py       # Main agent class
-additional_modifier.py  # Post-processing MC conversion pass
-gold.xlsx               # Gold standard reference spreadsheet
-credentials.json        # Google service account (not committed)
-.env                    # API key (not committed)
+problem row        — title, OER src, KC, Taxonomy, License
+  step row         — question text, answer, answerType
+    hint row (h1)  — concept name + brief explanation, no answer
+    scaffold (s1)  — guiding sub-question + answer, dep=h1
+    hint row (h2)  — optional second hint, dep=h1
+    scaffold (s2)  — dep=h2
+    ...
+  step row         — repeat for multi-step problems
+    ...
+[blank row]
 ```
 
-## How the Gemini prompt works
+### Column reference
 
-The pipeline uses a compact semicolon-delimited CSV prompt rather than verbose natural language instructions. Key design decisions:
+| Column | Notes |
+|--------|-------|
+| Problem Name | stem + number, e.g. `vector1`, `trig12` |
+| Row Type | `problem`, `step`, `hint`, or `scaffold` |
+| Title | question text (step) or concept name (hint/scaffold) |
+| Body Text | explanation (hint) or sub-question (scaffold) |
+| Answer | required on step and scaffold rows |
+| answerType | `numeric`, `algebra`, or `mc` |
+| HintID | `h1`/`h2`/`h3` for hints, `s1`/`s2`/`s3` for scaffolds — resets each step |
+| Dependency | `h1` depends on nothing; `h2` depends on `h1`; scaffolds depend on their hint |
+| mcChoices | pipe-delimited, 2–4 choices, required when answerType=mc |
+| Images | space-delimited URLs, populated by scraper when images are detected |
+| OER src | source URL, required on problem rows |
+| KC | knowledge component tag, required on problem rows |
+| Taxonomy | Bloom's level, required on problem rows |
 
-- **Anchor header line** hardcoded verbatim in the prompt to prevent column drift
-- **16-semicolon rule** stated explicitly — Gemini must emit exactly 16 semicolons per row
-- **Exercise-type rules** injected conditionally — only chunks containing exercises get the verbal/algebraic transformation rules, keeping example-only chunks lean
-- **Chunked processing** (3 problems/chunk for main pass, 5 for modifier) to stay within output token limits
-- **Fallback to raw data** if a chunk fails, so no content is silently dropped
+---
 
-## Prompt design notes
+## What the Validator Checks
 
-The Gemini prompt instructs:
-- **Verbal exercises** → convert to multiple choice with 4 plausible distractors
-- **Algebraic exercises** → split into one step per answer if the question demands multiple values
-- **Hints**: Title = concept label, Body Text = helpful explanation
-- **Scaffolds**: Title = instructional label, Body Text = guiding sub-question, Answer = concise single value where possible
+1. Every problem has at least one step
+2. HintIDs (`h1`, `h2`, `h3`) and ScaffoldIDs (`s1`, `s2`, `s3`) reset per step and are numbered correctly
+3. Dependency chains are valid (no forward references, scaffolds point to their hint)
+4. Problem Name ends in a number
+5. `OER src`, `KC`, and `Taxonomy` are populated on every problem row
+6. Formatting is consistent (LaTeX vs Python-style math) across the sheet
+7. `algebra` answers don't contain commas (unless the step explicitly uses `a,b` vector notation)
+8. Scaffolds have answers; hints don't
+9. `mcChoices` is present when `answerType=mc` and absent otherwise
+10. Answer is one of the mc choices when `answerType=mc`
 
-## Known limitations
+Issues are written to the `Validator Check` column on each problem row so you can filter in Excel/Sheets.
 
-- MathML rendering varies across OpenStax books — the custom LaTeX compiler covers common structures (`mfrac`, `msup`, `msqrt`, `mfenced`, etc.) but may miss edge cases in less common books
-- Exercise section scraping is scoped to `os-section-exercises-container` → `data-depth="2"` sections titled "Verbal" or "Algebraic" — other section types are ignored by design but can be added to `EXERCISE_SECTIONS_TO_SCRAPE`
-- The agent holds `population_index` and `problem_number` as mutable instance state, so calling population methods multiple times on the same instance accumulates numbering across calls (by design, to allow examples and exercises to share a continuous index)
+---
 
-- 11:27 PM
+## What the Fixer Handles
 
-## Next Steps
+**Auto-fixed (no API calls):**
+- Wrong HintID / ScaffoldID numbering
+- Wrong or forward-referencing Dependency
+- HintID or Dependency set on a step row
+- mcChoices present on a non-mc row
+- Answer present on a hint row
+- Column-shift repair (Gemini omitted a delimiter, shifting fields left)
 
-# Code Cleanup
+**Fixed via Gemini (requires API key):**
+- Missing answer on a scaffold
+- Missing or invalid answerType
+- Missing Taxonomy (classifies using Bloom's levels)
+- Missing KC (generates a hyphenated knowledge component tag)
 
-The agent currently holds `population_index` and `problem_number` as mutable instance state, which makes it fragile to reuse across calls. These should be local to each population method. `df_example_population` and `df_exercise_population` are nearly identical and should be unified into a single df_population method with a parameter controlling whether exercise type tagging happens. The Gemini prompt should be a class-level constant rather than defined inside the method body on every call. `generate_curriculum` does too much (emergent from the specific deliverable I had when developing this) — scraping, populating, processing, and exporting should be separated so a failure at any stage doesn't require restarting from scratch.
+**Flagged for manual review:**
+- Missing OER src
+- Problem has no steps
+- Problem Name doesn't end in a number
 
-Agentic Modifications
+---
 
-The most impactful upgrade is replacing the current prompt-in, CSV-out pattern with proper function calling. Instead of injecting the gold standard and chunk CSVs as text, Gemini would be given tools like get_chunk(problem_names), get_gold_standard(), validate_output(csv), and write_chunk(csv) and would decide how to orchestrate them. This makes the pipeline genuinely agentic — the model is choosing what to call and when, rather than receiving a single giant prompt and returning a single response. Gemini 2.5 Flash supports this natively via the Google GenAI SDK.
+## Adding a New Gold Standard
 
-A lighter-weight but still meaningful addition would be self-correction: after each chunk is parsed, run a validation step that checks row count, semicolon count per row, and that no new problem names were introduced, then feed failures back to Gemini with the specific error for a retry before falling back to raw data. Currently the fallback is silent — the agent gives up without attempting to fix the issue.
+The gold standard guides Gemini's output style. To add one:
 
-RAG integration (discussed earlier) would also fit naturally here — embedding the OATutor library at startup and retrieving topically similar worked examples per chunk to inject as few-shot demonstrations, which would significantly improve hint and scaffold quality for math domains the model handles less reliably.
+1. Create or export a well-formed OATutor xlsx
+2. Drop it in `gold_workbooks/`
+3. Pass it with `--gold your_file.xlsx`
+
+The gold file should have diverse examples of the content type you're generating — Gemini uses it as a style and structure reference.
+
+---
+
+## Common Issues
+
+**Gemini returns malformed CSV** — the column-shift repair in `generate_hints.py` handles the most common case (missing delimiter on empty field). If a chunk still fails after retry, it falls back to raw scraped data and logs the problem name. Re-run with `--chunk 1` to isolate it.
+
+**`GEMINI_API_KEY not set`** — check your `.env` file is in the project root and contains `GEMINI_API_KEY=...` with no spaces around the `=`.
+
+**Gold file not found** — pass just the filename (e.g. `--gold gold.xlsx`) and the agent looks in `gold_workbooks/`. Or pass a full path.
+
+**Images flagged during scrape** — the scraper prints any questions containing images. Upload those images to imgur and manually update the `Images (space delimited)` column with the imgur URLs before uploading to OATutor.
